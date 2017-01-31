@@ -108,7 +108,9 @@ public class ZoomImage extends View {
     private MotionEvent mEvent;
     private Picture picture;
     private DisplayMetrics display = this.getResources().getDisplayMetrics();
-
+    private Paint p;
+    private float offsetX;
+    private float offsetY;
 
 
     //Custom view initialization constructors
@@ -138,13 +140,24 @@ public class ZoomImage extends View {
 
         width = display.widthPixels;
         height = display.heightPixels;
-        canvasWidth = width*3;
-        canvasHeight = height*3;
+
+        canvasWidth = width * 3;
+        canvasHeight = height * 3;
+
+        pictureInit();
 
         mCriticPoints = new float[9];
         mMatrix.setScale(1f, 1f);
         mMatrix.preTranslate(-width,-height);
-        invalidateGrid(1,1,mScale);
+        invalidateGrid(1,1);
+    }
+
+    private void pictureInit() {
+        picture = new Picture();
+        p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setColor(Color.GRAY);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(2);
     }
 
     @Override
@@ -243,47 +256,14 @@ public class ZoomImage extends View {
     }
 
 
-
-
-
     /**
      * Drawing grid by current values
      * @param dx - delta by X coordinate. Calls on horizontal scroll
      * @param dy - delta by Y coordinate. Calls on vertical scroll
-     * @param dScale - Scale factor value. It will recalculate grid in depend of current value
      */
-    private void invalidateGrid(float dx, float dy, float dScale){
-        if(logging) Log.d(TAG, "dScale="+dScale);
-        if(logging) Log.d(TAG, "dx= "+dx+", dy= "+dy);
-
-        coordDistance *= dScale;
-        if(logging) Log.d(TAG, "coordDistance= " + coordDistance +", dScale " + dScale );
-        //checking drag
-        currentOffsetX += dx;
-        currentOffsetY += dy;
-        if(logging) Log.d(TAG, "currentOffsetX= " + currentOffsetX +", currentOffsetY= " + currentOffsetY );
-
-        //Getting current position of x coordinate
-        if(Math.abs(currentOffsetX) > coordDistance){
-            xCoordinate += currentOffsetX / coordDistance;
-            currentOffsetX = currentOffsetX % coordDistance;
-        }
-
-        //Getting current position of y coordinate
-        if(Math.abs(currentOffsetY) > coordDistance){
-            yCoordinate += currentOffsetY/coordDistance;
-            currentOffsetY = currentOffsetY % coordDistance;
-        }
-
-        //Get display parameters after scaling
-        int width = (int) (display.widthPixels * dScale);
-        int height = (int) (display.heightPixels * dScale);
-
-        calculateGridPoints(width,height);
-
+    private void invalidateGrid(float dx, float dy){
+        calculateGridPoints(dx,dy);
         drawPicture();
-
-
     }
 
     private void drawPicture() {
@@ -291,8 +271,10 @@ public class ZoomImage extends View {
             @Override
             public void run() {
                 recordPictureByPoints();
+                if(logging) Log.d(TAG, Thread.currentThread().getName()+" stopped");
             }
         });
+        if(logging) Log.d(TAG, th.getName() +" started");
         th.start();
     }
 
@@ -300,16 +282,8 @@ public class ZoomImage extends View {
      * Optimizing speed of drawing for the scene rebuilding
      */
     private void recordPictureByPoints() {
-        int width = display.widthPixels;
-        int height = display.heightPixels;
 
-        picture = new Picture();
-        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        p.setColor(Color.GRAY);
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(2);
-
-        Canvas canvas = picture.beginRecording(width, height);
+        Canvas canvas = picture.beginRecording(canvasWidth, canvasHeight);
         Path path = new Path();
 
         //Calculating and draw path of vertical lines
@@ -317,6 +291,8 @@ public class ZoomImage extends View {
             path.reset();
             path.moveTo(verticalLines[i], verticalLines[i+1]);
             path.lineTo(verticalLines[i+2], verticalLines[i+3]);
+            path.transform(mMatrix);
+            //path.offset(offsetX,offsetY);
             canvas.drawPath(path,p);
         }
 
@@ -325,33 +301,43 @@ public class ZoomImage extends View {
             path.reset();
             path.moveTo(horizontalLines[i], horizontalLines[i+1]);
             path.lineTo(horizontalLines[i+2], horizontalLines[i+3]);
+            path.transform(mMatrix);
+            // path.offset(offsetX,offsetY);
             canvas.drawPath(path,p);
+
         }
 
         // Call this in end of the function
         picture.endRecording();
     }
 
+
+
+
     /**
      *  Recalculating Grid coordinates on Motion events
-     * @param width
-     * @param height
+     * @param translateX
+     * @param translateY
      */
-    private void calculateGridPoints(int width, int height) {
-        int linesCountByWidth = (int) (width / coordDistance);
-        int linesCountByHeight = (int) (height / coordDistance);
+    private void calculateGridPoints(float translateX, float translateY) {
+        int linesCountByWidth = (int) (canvasWidth / coordDistance);
+        int linesCountByHeight = (int) (canvasHeight / coordDistance);
 
-        if(logging) Log.d(TAG, "lineCountByWidth="+linesCountByWidth+", height="+linesCountByHeight);
+
+        offsetX = translateX;
+        offsetY = translateY;
+
+        if(logging) Log.d(TAG, "lineCountByWidth="+linesCountByWidth+", lineCountByHeight="+linesCountByHeight);
 
         verticalLines = new float[linesCountByHeight*4];
         horizontalLines = new float[linesCountByWidth*4];
 
         //Calculating points by vertical
         int x = 0;
-        while(x < linesCountByHeight*4){
-            float pX = (width - currentOffsetX) - (x * coordDistance);
-            float pY1 = 0;
-            float pY2 = height;
+        float pY1 = 0 - translateY;
+        float pY2 = canvasHeight -translateY;
+        while(x < linesCountByWidth){
+            float pX = (0 - translateX) +  (x * coordDistance);
             verticalLines[x] = pX;
             verticalLines[x+1] = pY1;
             verticalLines[x+2] = pX;
@@ -361,10 +347,10 @@ public class ZoomImage extends View {
 
         //Calculating points by horizontal
         int y = 0;
-        while(y < linesCountByWidth*4){
-            float pX = (height - currentOffsetY) - (y * coordDistance);
-            float pY1 = 0;
-            float pY2 = width;
+        pY1 = 0 - translateY;
+        pY2 = canvasWidth - translateY;
+        while(y < linesCountByHeight){
+            float pX = (0 - translateX) + (y * coordDistance);
             horizontalLines[y] = pY1;
             horizontalLines[y+1] = pX;
             horizontalLines[y+2] = pY2;
@@ -372,6 +358,7 @@ public class ZoomImage extends View {
             y += 4;
         }
     }
+
 
     /**
      * Drawing  the picture on the screen
@@ -403,7 +390,7 @@ public class ZoomImage extends View {
             float scaleFactor = detector.getScaleFactor();
             float newScale = mScale * scaleFactor;
             if (newScale < maxScale && newScale > minScale) {
-                invalidateGrid(1,1,newScale);
+                invalidateGrid(1,1);
             }
             return true;
         }
@@ -433,7 +420,7 @@ public class ZoomImage extends View {
         @Override
         public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
             if(mode != ZOOM && (distanceX > 5 || distanceY > 5 ) ){
-                invalidateGrid(distanceX, distanceY, 1);
+                invalidateGrid(distanceX, distanceY);
             }
 
 
