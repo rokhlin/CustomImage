@@ -51,6 +51,7 @@ public class ZoomImage extends View {
     static final int DRAG = 1;
     static final int ZOOM = 2;
     static final int CLICK = 3;
+    static final int ROTATE = 4;
 
     //current touch event type
     private int mode = NONE;
@@ -94,12 +95,11 @@ public class ZoomImage extends View {
     private int canvasWidth;
     private int canvasHeight;
 
-//    //Rotation angle values
-//    private float newRot = 0f;
-//    private float d = 0f;
-//    private float rotationAngle = 0f;
+    //Rotation angle values
+    private float angle = 0;
 
     //Pointer values that we got on motion event
+    private PointF currentPoint;
     private PointF mLastTouch = new PointF();
     private PointF mStartTouch = new PointF();
 
@@ -111,6 +111,11 @@ public class ZoomImage extends View {
     private Paint p;
     private float offsetX;
     private float offsetY;
+
+    private float fY; //first point by Y
+    private float fX; //first point by X
+    private float sX; //second point by X
+    private float sY; //second point by Y
 
 
     //Custom view initialization constructors
@@ -175,7 +180,10 @@ public class ZoomImage extends View {
         float translateX = mCriticPoints[Matrix.MTRANS_X];
         float translateY = mCriticPoints[Matrix.MTRANS_Y];
 
-        PointF currentPoint = new PointF(event.getX(), event.getY());
+        if(logging) Log.d(TAG, "translateX="+translateX+", translateY="+translateY);
+
+
+        currentPoint = new PointF(event.getX(), event.getY());
 
         switch (event.getAction()) {
             //when one finger is touching
@@ -191,49 +199,50 @@ public class ZoomImage extends View {
             case MotionEvent.ACTION_POINTER_DOWN:
                 mLastTouch.set(event.getX(), event.getY());
                 mStartTouch.set(mLastTouch);
+                sX = mStartTouch.x;
+                sY = mStartTouch.y;
+                fX = mLastTouch.x;
+                fY = mLastTouch.y;
                 mode = ZOOM;
                 break;
 
             //when a finger moves
             //If mode is applicable move image
             case MotionEvent.ACTION_MOVE:
+                //get new points after rotating
+                float nsX = mStartTouch.x;
+                float nsY = mStartTouch.y;
+                float nfX = mLastTouch.x;
+                float nfY = mLastTouch.y;
+
+                //get new Rotating angle
+                float newAngle = angleBetweenLines(fX,fY,sX,sY,nfX,nfY,nsX,nsY);
+                if(newAngle>10f) mode = ROTATE;
+
                 if (mode == ZOOM || (mode == DRAG && mScale > minScale)) {
-                    // region . Move  image.
                     float deltaX = currentPoint.x - mLastTouch.x;// x difference
                     float deltaY = currentPoint.y - mLastTouch.y;// y difference
-                    float scaleWidth = Math.round(mOriginalBitmapWidth * mScale);// width after applying current scale
-                    float scaleHeight = Math.round(mOriginalBitmapHeight * mScale);// height after applying current scale
 
-                    //Call OnScale
-
-                    // Move image to lef or right if its width is bigger than display width
-                    if (scaleWidth > getWidth()) {
-                        if (translateX + deltaX > 0) {
-                            deltaX = -translateX;
-                        } else if (translateX + deltaX < -mRight) {
-                            deltaX = -(translateX + mRight);
-                        }
-                    } else {
-                        deltaX = 0;
-                    }
-
-                    // Move image to up or bottom if its height is bigger than display height
-                    if (scaleHeight > getHeight()) {
-                        if (translateY + deltaY > 0) {
-                            deltaY = -translateY;
-                        } else if (translateY + deltaY < - mBottom) {
-                            deltaY = -(translateY + mBottom);
-                        }
-                    } else {
-                        deltaY = 0;
-
-                    }
-
-                    //move the image with the matrix
-                    mMatrix.postScale(deltaX, deltaY,currentPoint.x, currentPoint.y);
+                    // mMatrix.postScale(deltaX, deltaY, currentPoint.x, currentPoint.y);
                     //set the last touch location to the current
                     mLastTouch.set(currentPoint.x, currentPoint.y);
 
+                }
+                if(mode == ROTATE){
+                    //clear last points
+                    sX = nfX;
+                    sY = nsY;
+                    fX = nfX;
+                    fY = nfY;
+
+                    PointF middlePoint = getMiddlePoint(sX,sY,fX,fY);
+
+                    if(logging) Log.d(TAG, "newAngle="+newAngle+", oldAngle="+angle);
+
+                    if(newAngle > angle + 15f){
+                        mMatrix.postRotate(newAngle / 3,middlePoint.x, middlePoint.y );
+                        angle = 0;
+                    }
                 }
 
                 break;
@@ -255,6 +264,42 @@ public class ZoomImage extends View {
         return true;
     }
 
+    /**
+     * @param sX coordinate of the second point by X
+     * @param sY coordinate of the second point by Y
+     * @param fX coordinate of the first point by X
+     * @param fY coordinate of the first point by Y
+     * @return PointF in the center of getting coordinates for rotation or scaling transformation
+     */
+    private PointF getMiddlePoint(float sX, float sY, float fX, float fY) {
+        float mX = (sX + fX) / 2;
+        float mY = (sY + fY) / 2;
+        return new PointF(mX,mY);
+    }
+
+    /**
+     * Angle calculating by changing of points position.
+     * @param fX coordinate of the first point by X
+     * @param fY coordinate of the first point by Y
+     * @param sX coordinate of the second point by X
+     * @param sY coordinate of the second point by Y
+     *
+     * New values of coordinate after touch event:
+     * @param nfX new coordinate of the first point by X
+     * @param nfY new coordinate of the first point by Y
+     * @param nsX new coordinate of the second point by X
+     * @param nsY new coordinate of the second point by Y
+     * @return Rotation angle
+     */
+    private float angleBetweenLines (float fX, float fY, float sX, float sY, float nfX, float nfY, float nsX, float nsY) {
+        float angle1 = (float) Math.atan2( (fY - sY), (fX - sX) );
+        float angle2 = (float) Math.atan2( (nfY - nsY), (nfX - nsX) );
+
+        float angle = ((float)Math.toDegrees(angle1 - angle2)) % 360;
+        if (angle < -180.f) angle += 360.0f;
+        if (angle > 180.f) angle -= 360.0f;
+        return -angle;
+    }
 
     /**
      * Drawing grid by current values
