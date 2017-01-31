@@ -15,6 +15,7 @@ import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
+import android.view.View;
 import android.widget.ImageView;
 import android.widget.Toast;
 
@@ -39,7 +40,7 @@ import android.widget.Toast;
  *
  */
 
-public class ZoomImage extends ImageView {
+public class ZoomImage extends View {
 
     //Log preferences
     private static final boolean logging = false;
@@ -87,6 +88,12 @@ public class ZoomImage extends ImageView {
     private float mOriginalBitmapWidth;
     private float mOriginalBitmapHeight;
 
+    //Screen and Canvas properties
+    private int width;
+    private int height;
+    private int canvasWidth;
+    private int canvasHeight;
+
 //    //Rotation angle values
 //    private float newRot = 0f;
 //    private float d = 0f;
@@ -129,44 +136,20 @@ public class ZoomImage extends ImageView {
         mScaleDetector = new ScaleGestureDetector(context, new ZoomImage.ScaleListener());
         gestureDetector = new GestureDetector(context,new ZoomImage.ScrollListener());
 
+        width = display.widthPixels;
+        height = display.heightPixels;
+        canvasWidth = width*3;
+        canvasHeight = height*3;
+
         mCriticPoints = new float[9];
-        setImageMatrix(mMatrix);
-        setScaleType(ScaleType.MATRIX);
         mMatrix.setScale(1f, 1f);
+        mMatrix.preTranslate(-width,-height);
         invalidateGrid(1,1,mScale);
     }
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-        int bmHeight = getBmHeight();
-        int bmWidth = getBmWidth();
-
-        float width = getMeasuredWidth();
-        float height = getMeasuredHeight();
-        float scale = 1;
-
-        if(logging) Log.d(TAG, "Measured width="+width+", height="+height);
-        // If image is bigger then display fit it to screen.
-        if (width < bmWidth || height < bmHeight) {
-            scale = width > height ? height / bmHeight : width / bmWidth;
-        }
-
-        mMatrix.setScale(scale, scale);
-        mScale = 1f;
-
-        mOriginalBitmapWidth = scale * bmWidth;
-        mOriginalBitmapHeight = scale * bmHeight;
-
-        // Center the image
-        float redundantYSpace = (height - mOriginalBitmapHeight);
-        float redundantXSpace = (width - mOriginalBitmapWidth);
-
-        mMatrix.postTranslate(redundantXSpace / 2, redundantYSpace / 2);
-
-        setImageMatrix(mMatrix);
-
     }
 
     public boolean onTouchEvent(MotionEvent event) {
@@ -254,34 +237,12 @@ public class ZoomImage extends ImageView {
                 mode = NONE;
                 break;
         }
-        setImageMatrix(mMatrix);
+
         invalidate();
         return true;
     }
 
-    /**
-     * Getting bitmap values: WIDTH
-     * @return If Drawable resource defined returned intrinsic Width if not 0
-     */
-    private int getBmWidth() {
-        Drawable drawable = getDrawable();
-        if (drawable != null) {
-            return drawable.getIntrinsicWidth();
-        }
-        return 0;
-    }
 
-    /**
-     * Getting bitmap values: HEIGHT
-     * @return If Drawable resource defined returned intrinsic Height if not 0
-     */
-    private int getBmHeight() {
-        Drawable drawable = getDrawable();
-        if (drawable != null) {
-            return drawable.getIntrinsicHeight();
-        }
-        return 0;
-    }
 
 
 
